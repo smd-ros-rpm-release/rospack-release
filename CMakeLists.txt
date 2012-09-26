@@ -1,11 +1,10 @@
 cmake_minimum_required(VERSION 2.6.0)
 project(rospack)
-find_package(catkin)
-catkin_stack()
-catkin_project(rospack
+find_package(catkin REQUIRED)
+catkin_package(
   LIBRARIES rospack
   INCLUDE_DIRS include
-  )
+)
 
 # BUILD_SHARED_LIBS is a global cmake variable (usually defaults to on) that determines
 # the build type of libraries:
@@ -45,25 +44,22 @@ add_executable(rospackexe src/rospack_main.cpp)
 # Set the name, and make it a "global" executable
 set_target_properties(rospackexe
                       PROPERTIES OUTPUT_NAME rospack
-                                 RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+                                 RUNTIME_OUTPUT_DIRECTORY ${CATKIN_BUILD_PREFIX}/bin)
 target_link_libraries(rospackexe rospack ${Boost_LIBRARIES})
 add_executable(rosstackexe src/rosstack_main.cpp)
 target_link_libraries(rosstackexe rospack ${Boost_LIBRARIES})
 # Set the name, and make it a "global" executable
 set_target_properties(rosstackexe
                       PROPERTIES OUTPUT_NAME rosstack
-                                 RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+                                 RUNTIME_OUTPUT_DIRECTORY ${CATKIN_BUILD_PREFIX}/bin)
 
 install(TARGETS rospack rospackexe rosstackexe
-        ARCHIVE DESTINATION lib
-        LIBRARY DESTINATION lib
-        RUNTIME DESTINATION bin)
-install(DIRECTORY include/
-        DESTINATION include
-        FILES_MATCHING PATTERN "*.h"
-        PATTERN ".svn" EXCLUDE)
-install(FILES manifest.xml stack.xml
-        DESTINATION share/rospack)
+  ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+  LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+  RUNTIME DESTINATION ${CATKIN_GLOBAL_BIN_DESTINATION})
+install(DIRECTORY include/${PROJECT_NAME}/
+  DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}
+  FILES_MATCHING PATTERN "*.h")
 
 # uninstall target
 configure_file(
