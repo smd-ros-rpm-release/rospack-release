@@ -27,11 +27,10 @@
 
 #include "rospack/rospack.h"
 #include "utils.h"
-#include "tinyxml.h"
+#include "tinyxml-2.5.3/tinyxml.h"
 
 #include <boost/filesystem.hpp>
 #include <boost/algorithm/string.hpp>
-#include <map>
 #include <stdexcept>
 
 #if defined(WIN32)
@@ -56,14 +55,6 @@
 #include <string.h>
 #include <errno.h>
 
-#include <Python.h>
-
-/* re-define some String functions for recent python (>= 3.0) */
-#if PY_VERSION_HEX >= 0x03000000
-#define PyString_AsString PyBytes_AsString
-#define PyString_FromString PyBytes_FromString
-#endif
-
 // TODO:
 //   recrawl on:
 //     package not found in cache
@@ -76,7 +67,6 @@ namespace rospack
 static const char* MANIFEST_TAG_PACKAGE = "package";
 static const char* MANIFEST_TAG_STACK = "stack";
 static const char* ROSPACK_MANIFEST_NAME = "manifest.xml";
-static const char* ROSPACKAGE_MANIFEST_NAME = "package.xml";
 static const char* ROSSTACK_MANIFEST_NAME = "stack.xml";
 static const char* ROSPACK_CACHE_NAME = "rospack_cache";
 static const char* ROSSTACK_CACHE_NAME = "rosstack_cache";
@@ -97,7 +87,7 @@ static const int MAX_CRAWL_DEPTH = 1000;
 static const int MAX_DEPENDENCY_DEPTH = 1000;
 static const double DEFAULT_MAX_CACHE_AGE = 60.0;
 
-TiXmlElement* get_manifest_root(Stackage* stackage);
+rospack_tinyxml::TiXmlElement* get_manifest_root(Stackage* stackage);
 double time_since_epoch();
 
 #ifdef __APPLE__
@@ -127,63 +117,23 @@ class Stackage
     std::string path_;
     // \brief absolute path to the stackage manifest
     std::string manifest_path_;
-    // \brief filename of the stackage manifest
-    std::string manifest_name_;
     // \brief have we already loaded the manifest?
     bool manifest_loaded_;
     // \brief TinyXML structure, filled in during parsing
-    TiXmlDocument manifest_;
+    rospack_tinyxml::TiXmlDocument manifest_;
     std::vector<Stackage*> deps_;
     bool deps_computed_;
-    bool is_wet_package_;
-    bool is_metapackage_;
 
     Stackage(const std::string& name,
              const std::string& path,
-             const std::string& manifest_path,
-             const std::string& manifest_name) :
+             const std::string& manifest_path) :
             name_(name),
             path_(path),
             manifest_path_(manifest_path),
-            manifest_name_(manifest_name),
             manifest_loaded_(false),
-            deps_computed_(false),
-            is_metapackage_(false)
-    {
-      is_wet_package_ = manifest_name_ == ROSPACKAGE_MANIFEST_NAME;
-    }
-
-    void update_wet_information()
-    {
-      assert(is_wet_package_);
-      assert(manifest_loaded_);
-      // get name from package.xml instead of folder name
-      TiXmlElement* root = get_manifest_root(this);
-      for(TiXmlElement* el = root->FirstChildElement("name"); el; el = el->NextSiblingElement("name"))
-      {
-        name_ = el->GetText();
-        break;
-      }
-      // check if package is a metapackage
-      for(TiXmlElement* el = root->FirstChildElement("export"); el; el = el->NextSiblingElement("export"))
-      {
-        if(el->FirstChildElement("metapackage"))
-        {
-          is_metapackage_ = true;
-          break;
-        }
-      }
-    }
-
-    bool isStack() const
-    {
-      return manifest_name_ == MANIFEST_TAG_STACK || (is_wet_package_ && is_metapackage_);
-    }
-
-    bool isPackage() const
-    {
-      return manifest_name_ == MANIFEST_TAG_PACKAGE || (is_wet_package_ && !is_metapackage_);
-    }
+            deps_computed_(false)
+  {
+  }
 
 };
 
@@ -313,10 +263,6 @@ Rosstackage::isStackage(const std::string& path)
         continue;
 
       if(dit->path().filename() == manifest_name_)
-        return true;
-
-      // finding a package.xml is acceptable
-      if(dit->path().filename() == ROSPACKAGE_MANIFEST_NAME)
         return true;
     }
   }
@@ -681,15 +627,16 @@ Rosstackage::rosdeps(const std::string& name, bool direct,
         it != deps_vec.end();
         ++it)
     {
-      if (!stackage->is_wet_package_)
+      rospack_tinyxml::TiXmlElement* root = get_manifest_root(*it);
+      for(rospack_tinyxml::TiXmlElement* ele = root->FirstChildElement(MANIFEST_TAG_ROSDEP);
+          ele;
+          ele = ele->NextSiblingElement(MANIFEST_TAG_ROSDEP))
       {
-        _rosdeps(*it, rosdeps, MANIFEST_TAG_ROSDEP);
-      }
-      else
-      {
-        _rosdeps(*it, rosdeps, "build_depend");
-        _rosdeps(*it, rosdeps, "buildtool_depend");
-        _rosdeps(*it, rosdeps, "run_depend");
+        const char *att_str;
+        if((att_str = ele->Attribute(MANIFEST_ATTR_NAME)))
+        {
+          rosdeps.insert(std::string("name: ") + att_str);
+        }
       }
     }
   }
@@ -699,33 +646,6 @@ Rosstackage::rosdeps(const std::string& name, bool direct,
     return false;
   }
   return true;
-}
-
-void
-Rosstackage::_rosdeps(Stackage* stackage, std::set<std::string>& rosdeps, const char* tag_name)
-{
-  TiXmlElement* root = get_manifest_root(stackage);
-  for(TiXmlElement* ele = root->FirstChildElement(tag_name);
-      ele;
-      ele = ele->NextSiblingElement(tag_name))
-  {
-    if(!stackage->is_wet_package_)
-    {
-      const char *att_str;
-      if((att_str = ele->Attribute(MANIFEST_ATTR_NAME)))
-      {
-        rosdeps.insert(std::string("name: ") + att_str);
-      }
-    }
-    else
-    {
-      const char* dep_pkgname = ele->GetText();
-      if(isSysPackage(dep_pkgname))
-      {
-        rosdeps.insert(std::string("name: ") + dep_pkgname);
-      }
-    }
-  }
 }
 
 bool
@@ -747,8 +667,8 @@ Rosstackage::vcs(const std::string& name, bool direct,
         it != deps_vec.end();
         ++it)
     {
-      TiXmlElement* root = get_manifest_root(*it);
-      for(TiXmlElement* ele = root->FirstChildElement(MANIFEST_TAG_VERSIONCONTROL);
+      rospack_tinyxml::TiXmlElement* root = get_manifest_root(*it);
+      for(rospack_tinyxml::TiXmlElement* ele = root->FirstChildElement(MANIFEST_TAG_VERSIONCONTROL);
           ele;
           ele = ele->NextSiblingElement(MANIFEST_TAG_VERSIONCONTROL))
       {
@@ -777,175 +697,6 @@ Rosstackage::vcs(const std::string& name, bool direct,
 }
 
 bool 
-Rosstackage::cpp_exports(const std::string& name, const std::string& type,
-                     const std::string& attrib, bool deps_only,
-                     std::vector<std::pair<std::string, bool> >& flags)
-{
-  Stackage* stackage = findWithRecrawl(name);
-  if(!stackage)
-    return false;
-
-  static bool init_py = false;
-  static PyObject* pName;
-  static PyObject* pModule;
-  static PyObject* pDict;
-  static PyObject* pFunc;
-
-  try
-  {
-    computeDeps(stackage);
-    std::vector<Stackage*> deps_vec;
-    if(!deps_only)
-      deps_vec.push_back(stackage);
-    gatherDeps(stackage, false, PREORDER, deps_vec, true);
-    for(std::vector<Stackage*>::const_iterator it = deps_vec.begin();
-        it != deps_vec.end();
-        ++it)
-    {
-      if(!(*it)->is_wet_package_)
-      {
-        std::vector<std::string> dry_flags;
-        if(!exports_dry_package(*it, "cpp", attrib, dry_flags))
-        {
-          return false;
-        }
-        for(std::vector<std::string>::const_iterator it = dry_flags.begin(); it != dry_flags.end(); ++it)
-        {
-          flags.push_back(std::pair<std::string, bool>(*it, false));
-        }
-      }
-      else
-      {
-        initPython();
-        PyGILState_STATE gstate = PyGILState_Ensure();
-
-        if(!init_py)
-        {
-          init_py = true;
-          pName = PyString_FromString("rosdep2.rospack");
-          pModule = PyImport_Import(pName);
-          if(!pModule)
-          {
-            PyErr_Print();
-            PyGILState_Release(gstate);
-            std::string errmsg = "could not find python module 'rosdep2.rospack'. is rosdep up-to-date (at least 0.10.4)?";
-            throw Exception(errmsg);
-          }
-          pDict = PyModule_GetDict(pModule);
-          pFunc = PyDict_GetItemString(pDict, "call_pkg_config");
-        }
-
-        if(!PyCallable_Check(pFunc))
-        {
-          PyErr_Print();
-          PyGILState_Release(gstate);
-          std::string errmsg = "could not find python function 'rosdep2.rospack.call_pkg_config'. is rosdep up-to-date (at least 0.10.7)?";
-          throw Exception(errmsg);
-        }
-
-        PyObject* pArgs = PyTuple_New(2);
-        PyObject* pOpt = PyString_FromString(type.c_str());
-        PyTuple_SetItem(pArgs, 0, pOpt);
-        PyObject* pPkg = PyString_FromString((*it)->name_.c_str());
-        PyTuple_SetItem(pArgs, 1, pPkg);
-        PyObject* pValue = PyObject_CallObject(pFunc, pArgs);
-        Py_DECREF(pArgs);
-
-        if(!pValue)
-        {
-          PyErr_Print();
-          PyGILState_Release(gstate);
-          std::string errmsg = "could not call python function 'rosdep2.rospack.call_pkg_config'";
-          throw Exception(errmsg);
-        }
-
-        flags.push_back(std::pair<std::string, bool>(PyString_AsString(pValue), true));
-        Py_DECREF(pValue);
-
-        // we want to keep the static objects alive for repeated access
-        // so skip all garbage collection until process ends
-        //Py_DECREF(pFunc);
-        //Py_DECREF(pModule);
-        //Py_DECREF(pName);
-        //Py_Finalize();
-
-        PyGILState_Release(gstate);
-      }
-    }
-  }
-  catch(Exception& e)
-  {
-    logError(e.what());
-    return false;
-  }
-  return true;
-}
-
-bool
-Rosstackage::reorder_paths(const std::string& paths, std::string& reordered)
-{
-  static bool init_py = false;
-  static PyObject* pName;
-  static PyObject* pModule;
-  static PyObject* pFunc;
-
-  initPython();
-  PyGILState_STATE gstate = PyGILState_Ensure();
-
-  if(!init_py)
-  {
-    init_py = true;
-    pName = PyString_FromString("catkin_pkg.rospack");
-    pModule = PyImport_Import(pName);
-    if(!pModule)
-    {
-      PyErr_Print();
-      PyGILState_Release(gstate);
-      std::string errmsg = "could not find python module 'catkin_pkg.rospack'. is catkin_pkg up-to-date (at least 0.1.8)?";
-      throw Exception(errmsg);
-    }
-    PyObject* pDict = PyModule_GetDict(pModule);
-    pFunc = PyDict_GetItemString(pDict, "reorder_paths");
-  }
-
-  if(!PyCallable_Check(pFunc))
-  {
-    PyErr_Print();
-    PyGILState_Release(gstate);
-    std::string errmsg = "could not find python function 'catkin_pkg.rospack.reorder_paths'. is catkin_pkg up-to-date (at least 0.1.8)?";
-    throw Exception(errmsg);
-  }
-
-
-  PyObject* pArgs = PyTuple_New(1);
-  PyTuple_SetItem(pArgs, 0, PyString_FromString(paths.c_str()));
-  PyObject* pValue = PyObject_CallObject(pFunc, pArgs);
-  Py_DECREF(pArgs);
-
-  if(!pValue)
-  {
-    PyErr_Print();
-    PyGILState_Release(gstate);
-    std::string errmsg = "could not call python function 'catkin_pkg.rospack.reorder_paths'";
-    throw Exception(errmsg);
-  }
-
-  reordered = PyString_AsString(pValue);
-  Py_DECREF(pValue);
-
-  // we want to keep the static objects alive for repeated access
-  // so skip all garbage collection until process ends
-  //Py_DECREF(pFunc);
-  //Py_DECREF(pModule);
-  //Py_DECREF(pName);
-  //Py_Finalize();
-
-  PyGILState_Release(gstate);
-
-  return true;
-}
-
-bool 
 Rosstackage::exports(const std::string& name, const std::string& lang,
                      const std::string& attrib, bool deps_only,
                      std::vector<std::string>& flags)
@@ -964,9 +715,66 @@ Rosstackage::exports(const std::string& name, const std::string& lang,
         it != deps_vec.end();
         ++it)
     {
-      if (!exports_dry_package(*it, lang, attrib, flags))
+      rospack_tinyxml::TiXmlElement* root = get_manifest_root(*it);
+      for(rospack_tinyxml::TiXmlElement* ele = root->FirstChildElement(MANIFEST_TAG_EXPORT);
+          ele;
+          ele = ele->NextSiblingElement(MANIFEST_TAG_EXPORT))
       {
-        return false;
+        bool os_match = false;
+        const char *best_match = NULL;
+        for(rospack_tinyxml::TiXmlElement* ele2 = ele->FirstChildElement(lang);
+            ele2;
+            ele2 = ele2->NextSiblingElement(lang))
+        {
+          const char *os_str;
+          if ((os_str = ele2->Attribute("os")))
+          {
+            if(g_ros_os == std::string(os_str))
+            {
+              if(os_match)
+                logWarn(std::string("ignoring duplicate ") + lang + " tag with os=" + os_str + " in export block");
+              else
+              {
+                best_match = ele2->Attribute(attrib.c_str());
+                os_match = true;
+              }
+            }
+          }
+          if(!os_match)
+          {
+            if(!best_match)
+              best_match = ele2->Attribute(attrib.c_str());
+            else
+              logWarn(std::string("ignoring duplicate ") + lang + " tag in export block");
+          }
+
+        }
+        if(best_match)
+        {
+          std::string expanded_str;
+          if(!expandExportString(*it, best_match, expanded_str))
+            return false;
+          flags.push_back(expanded_str);
+        }
+      }
+
+      // We automatically point to msg_gen and msg_srv directories if
+      // certain files are present.
+      // But only if we're looking for cpp/cflags, #3884.
+      if((lang == "cpp") && (attrib == "cflags"))
+      {
+        fs::path msg_gen = fs::path((*it)->path_) / MSG_GEN_GENERATED_DIR;
+        fs::path srv_gen = fs::path((*it)->path_) / SRV_GEN_GENERATED_DIR;
+        if(fs::is_regular_file(msg_gen / MSG_GEN_GENERATED_FILE))
+        {
+          msg_gen /= fs::path("cpp") / "include";
+          flags.push_back(std::string("-I" + msg_gen.string()));
+        }
+        if(fs::is_regular_file(srv_gen / SRV_GEN_GENERATED_FILE))
+        {
+          srv_gen /= fs::path("cpp") / "include";
+          flags.push_back(std::string("-I" + srv_gen.string()));
+        }
       }
     }
   }
@@ -974,74 +782,6 @@ Rosstackage::exports(const std::string& name, const std::string& lang,
   {
     logError(e.what());
     return false;
-  }
-  return true;
-}
-
-bool 
-Rosstackage::exports_dry_package(Stackage* stackage, const std::string& lang,
-                     const std::string& attrib,
-                     std::vector<std::string>& flags)
-{
-  TiXmlElement* root = get_manifest_root(stackage);
-  for(TiXmlElement* ele = root->FirstChildElement(MANIFEST_TAG_EXPORT);
-      ele;
-      ele = ele->NextSiblingElement(MANIFEST_TAG_EXPORT))
-  {
-    bool os_match = false;
-    const char *best_match = NULL;
-    for(TiXmlElement* ele2 = ele->FirstChildElement(lang);
-        ele2;
-        ele2 = ele2->NextSiblingElement(lang))
-    {
-      const char *os_str;
-      if ((os_str = ele2->Attribute("os")))
-      {
-        if(g_ros_os == std::string(os_str))
-        {
-          if(os_match)
-            logWarn(std::string("ignoring duplicate ") + lang + " tag with os=" + os_str + " in export block");
-          else
-          {
-            best_match = ele2->Attribute(attrib.c_str());
-            os_match = true;
-          }
-        }
-      }
-      if(!os_match)
-      {
-        if(!best_match)
-          best_match = ele2->Attribute(attrib.c_str());
-        else
-          logWarn(std::string("ignoring duplicate ") + lang + " tag in export block");
-      }
-
-    }
-    if(best_match)
-    {
-      std::string expanded_str;
-      if(!expandExportString(stackage, best_match, expanded_str))
-        return false;
-      flags.push_back(expanded_str);
-    }
-  }
-  // We automatically point to msg_gen and msg_srv directories if
-  // certain files are present.
-  // But only if we're looking for cpp/cflags, #3884.
-  if((lang == "cpp") && (attrib == "cflags"))
-  {
-    fs::path msg_gen = fs::path(stackage->path_) / MSG_GEN_GENERATED_DIR;
-    fs::path srv_gen = fs::path(stackage->path_) / SRV_GEN_GENERATED_DIR;
-    if(fs::is_regular_file(msg_gen / MSG_GEN_GENERATED_FILE))
-    {
-      msg_gen /= fs::path("cpp") / "include";
-      flags.push_back(std::string("-I" + msg_gen.string()));
-    }
-    if(fs::is_regular_file(srv_gen / SRV_GEN_GENERATED_FILE))
-    {
-      srv_gen /= fs::path("cpp") / "include";
-      flags.push_back(std::string("-I" + srv_gen.string()));
-    }
   }
   return true;
 }
@@ -1089,12 +829,12 @@ Rosstackage::plugins(const std::string& name, const std::string& attrib,
       it != stackages.end();
       ++it)
   {
-    TiXmlElement* root = get_manifest_root(*it);
-    for(TiXmlElement* ele = root->FirstChildElement(MANIFEST_TAG_EXPORT);
+    rospack_tinyxml::TiXmlElement* root = get_manifest_root(*it);
+    for(rospack_tinyxml::TiXmlElement* ele = root->FirstChildElement(MANIFEST_TAG_EXPORT);
         ele;
         ele = ele->NextSiblingElement(MANIFEST_TAG_EXPORT))
     {
-      for(TiXmlElement* ele2 = ele->FirstChildElement(name);
+      for(rospack_tinyxml::TiXmlElement* ele2 = ele->FirstChildElement(name);
           ele2;
           ele2 = ele2->NextSiblingElement(name))
       {
@@ -1248,7 +988,7 @@ Rosstackage::depsWhyDetail(Stackage* from,
 
 bool
 Rosstackage::depsOnDetail(const std::string& name, bool direct,
-                          std::vector<Stackage*>& deps)
+                             std::vector<Stackage*>& deps)
 {
   // No recrawl here, because depends-on always forces a crawl at the
   // start.
@@ -1353,34 +1093,13 @@ Rosstackage::addStackage(const std::string& path)
   std::string name = fs::path(path).filename().string();
 #endif
 
-  Stackage* stackage = 0;
-  fs::path wet_manifest_path = fs::path(path) / ROSPACKAGE_MANIFEST_NAME;
-  if(fs::is_regular_file(wet_manifest_path))
+  if(stackages_.find(name) != stackages_.end())
   {
-    stackage = new Stackage(name, path, wet_manifest_path.string(), ROSPACKAGE_MANIFEST_NAME);
-    loadManifest(stackage);
-    stackage->update_wet_information();
-  }
-  else
-  {
-    fs::path manifest_path = fs::path(path) / manifest_name_;
-    stackage = new Stackage(name, path, manifest_path.string(), manifest_name_);
-  }
-
-  // skip the stackage if it is not of correct type
-  if((manifest_name_ == ROSSTACK_MANIFEST_NAME && stackage->isPackage()) ||
-     (manifest_name_ == ROSPACK_MANIFEST_NAME && stackage->isStack()))
-  {
+    dups_.insert(name);
     return;
   }
-
-  if(stackages_.find(stackage->name_) != stackages_.end())
-  {
-    dups_.insert(stackage->name_);
-    return;
-  }
-
-  stackages_[stackage->name_] = stackage;
+  fs::path manifest_path = fs::path(path) / manifest_name_;
+  stackages_[name] = new Stackage(name, path, manifest_path.string());
 }
 
 void
@@ -1511,10 +1230,11 @@ Rosstackage::computeDeps(Stackage* stackage, bool ignore_errors)
 
   stackage->deps_computed_ = true;
 
+  rospack_tinyxml::TiXmlElement* root;
   try
   {
     loadManifest(stackage);
-    get_manifest_root(stackage);
+    root = get_manifest_root(stackage);
   }
   catch(Exception& e)
   {
@@ -1523,35 +1243,11 @@ Rosstackage::computeDeps(Stackage* stackage, bool ignore_errors)
     else
       throw e;
   }
-  if (!stackage->is_wet_package_)
+  rospack_tinyxml::TiXmlNode *dep_node = NULL;
+  while((dep_node = root->IterateChildren("depend", dep_node)))
   {
-    computeDepsInternal(stackage, ignore_errors, "depend");
-  }
-  else
-  {
-    computeDepsInternal(stackage, ignore_errors, "run_depend");
-  }
-}
-
-void
-Rosstackage::computeDepsInternal(Stackage* stackage, bool ignore_errors, const std::string& depend_tag)
-{
-  TiXmlElement* root;
-  root = get_manifest_root(stackage);
-
-  TiXmlNode *dep_node = NULL;
-  const char* dep_pkgname;
-  while((dep_node = root->IterateChildren(depend_tag, dep_node)))
-  {
-    TiXmlElement *dep_ele = dep_node->ToElement();
-    if (!stackage->is_wet_package_)
-    {
-      dep_pkgname = dep_ele->Attribute(tag_.c_str());
-    }
-    else
-    {
-      dep_pkgname = dep_ele->GetText();
-    }
+    rospack_tinyxml::TiXmlElement *dep_ele = dep_node->ToElement();
+    const char* dep_pkgname = dep_ele->Attribute(tag_.c_str());
     if(!dep_pkgname)
     {
       if(!ignore_errors)
@@ -1570,18 +1266,14 @@ Rosstackage::computeDepsInternal(Stackage* stackage, bool ignore_errors, const s
     }
     else if(!stackages_.count(dep_pkgname))
     {
-      if (stackage->is_wet_package_ && isSysPackage(dep_pkgname))
-      {
-        continue;
-      }
       if(ignore_errors)
       {
-        Stackage* dep =  new Stackage(dep_pkgname, "", "", "");
+        Stackage* dep =  new Stackage(dep_pkgname, "", "");
         stackage->deps_.push_back(dep);
       }
       else
       {
-        std::string errmsg = std::string("package/stack '") + stackage->name_ + "' depends on non-existent package '" + dep_pkgname + "' and rosdep claims that it is not a system dependency. Check the ROS_PACKAGE_PATH or try calling 'rosdep update'";
+        std::string errmsg = std::string("package/stack ") + stackage->name_ + " depends on non-existent package " + dep_pkgname;
         throw Exception(errmsg);
       }
     }
@@ -1595,135 +1287,14 @@ Rosstackage::computeDepsInternal(Stackage* stackage, bool ignore_errors, const s
 }
 
 void
-Rosstackage::initPython()
-{
-  static bool initialized = false;
-  if(!initialized)
-  {
-    initialized = true;
-    Py_InitializeEx(0);
-  }
-}
-
-bool
-Rosstackage::isSysPackage(const std::string& pkgname)
-{
-  static std::map<std::string, bool> cache;
-  if(cache.find(pkgname) != cache.end())
-  {
-    return cache.find(pkgname)->second;
-  }
-
-  initPython();  
-  PyGILState_STATE gstate = PyGILState_Ensure();
-
-  static PyObject* pModule = 0;
-  static PyObject* pDict = 0;
-  if(!pModule)
-  {
-    PyObject* pName = PyString_FromString("rosdep2.rospack");
-    pModule = PyImport_Import(pName);
-    Py_DECREF(pName);
-    if(!pModule)
-    {
-      PyErr_Print();
-      PyGILState_Release(gstate);
-      std::string errmsg = "could not find python module 'rosdep2.rospack'. is rosdep up-to-date (at least 0.10.4)?";
-      throw Exception(errmsg);
-    }
-    pDict = PyModule_GetDict(pModule);
-  }
-
-  static PyObject* pView = 0;
-  if(!pView)
-  {
-    PyObject* pFunc = PyDict_GetItemString(pDict, "init_rospack_interface");
-    if(!PyCallable_Check(pFunc))
-    {
-      PyErr_Print();
-      PyGILState_Release(gstate);
-      std::string errmsg = "could not find python function 'rosdep2.rospack.init_rospack_interface'. is rosdep up-to-date (at least 0.10.4)?";
-      throw Exception(errmsg);
-    }
-    pView = PyObject_CallObject(pFunc, NULL);
-    if(!pView)
-    {
-      PyErr_Print();
-      PyGILState_Release(gstate);
-      std::string errmsg = "could not call python function 'rosdep2.rospack.init_rospack_interface'";
-      throw Exception(errmsg);
-    }
-  }
-  static bool rospack_view_not_empty = false;
-  if(!rospack_view_not_empty)
-  {
-    PyObject* pFunc = PyDict_GetItemString(pDict, "is_view_empty");
-    if(!PyCallable_Check(pFunc))
-    {
-      PyErr_Print();
-      PyGILState_Release(gstate);
-      std::string errmsg = "could not find python function 'rosdep2.rospack.is_view_empty'. is rosdep up-to-date (at least 0.10.8)?";
-      throw Exception(errmsg);
-    }
-    PyObject* pArgs = PyTuple_New(1);
-    PyTuple_SetItem(pArgs, 0, pView);
-    PyObject* pValue = PyObject_CallObject(pFunc, pArgs);
-    Py_INCREF(pView); // in order to keep the view when garbaging pArgs
-    Py_DECREF(pArgs);
-    if(PyObject_IsTrue(pValue))
-    {
-      PyErr_Print();
-      PyGILState_Release(gstate);
-      std::string errmsg = "the rosdep view is empty: call 'sudo rosdep init' and 'rosdep update'";
-      throw Exception(errmsg);
-    }
-    rospack_view_not_empty = true;
-  }
-
-  PyObject* pFunc = PyDict_GetItemString(pDict, "is_system_dependency");
-  if(!PyCallable_Check(pFunc))
-  {
-    PyErr_Print();
-    PyGILState_Release(gstate);
-    std::string errmsg = "could not call python function 'rosdep2.rospack.is_system_dependency'. is rosdep up-to-date (at least 0.10.4)?";
-    throw Exception(errmsg);
-  }
-
-  PyObject* pArgs = PyTuple_New(2);
-  PyTuple_SetItem(pArgs, 0, pView);
-  PyObject* pDep = PyString_FromString(pkgname.c_str());
-  PyTuple_SetItem(pArgs, 1, pDep);
-  PyObject* pValue = PyObject_CallObject(pFunc, pArgs);
-  Py_INCREF(pView); // in order to keep the view when garbaging pArgs
-  Py_DECREF(pArgs);
-
-  bool value = PyObject_IsTrue(pValue);
-  Py_DECREF(pValue);
-
-  // we want to keep the static objects alive for repeated access
-  // so skip all garbage collection until process ends
-  //Py_DECREF(pView);
-  //Py_DECREF(pDict);
-  //Py_DECREF(pModule);
-  //Py_Finalize();
-
-  PyGILState_Release(gstate);
-
-  cache[pkgname] = value;
-
-  return value;
-}
-
-void
 Rosstackage::gatherDeps(Stackage* stackage, bool direct, 
                         traversal_order_t order,
-                        std::vector<Stackage*>& deps,
-                        bool no_recursion_on_wet)
+                        std::vector<Stackage*>& deps)
 {
   std::tr1::unordered_set<Stackage*> deps_hash;
   std::vector<std::string> indented_deps;
   gatherDepsFull(stackage, direct, order, 0, 
-                 deps_hash, deps, false, indented_deps, no_recursion_on_wet);
+                 deps_hash, deps, false, indented_deps);
 }
 
 // Pre-condition: computeDeps(stackage) succeeded
@@ -1733,15 +1304,9 @@ Rosstackage::gatherDepsFull(Stackage* stackage, bool direct,
                             std::tr1::unordered_set<Stackage*>& deps_hash,
                             std::vector<Stackage*>& deps,
                             bool get_indented_deps,
-                            std::vector<std::string>& indented_deps,
-                            bool no_recursion_on_wet)
+                            std::vector<std::string>& indented_deps)
 {
-  if(stackage->is_wet_package_ && no_recursion_on_wet)
-  {
-    return;
-  }
-
-  if(direct && (stackage->is_wet_package_ || !no_recursion_on_wet))
+  if(direct)
   {
     for(std::vector<Stackage*>::const_iterator it = stackage->deps_.begin();
         it != stackage->deps_.end();
@@ -1775,14 +1340,11 @@ Rosstackage::gatherDepsFull(Stackage* stackage, bool direct,
       if(order == PREORDER)
         deps.push_back(*it);
     }
-    if(!(*it)->is_wet_package_ || !no_recursion_on_wet)
-    {
-      // We always descend, even if we're encountering this stackage for the
-      // nth time, so that we'll throw an error on recursive dependencies
-      // (detected via max stack depth being exceeded).
-      gatherDepsFull(*it, direct, order, depth+1, deps_hash, deps,
-                     get_indented_deps, indented_deps);
-    }
+    // We always descend, even if we're encountering this stackage for the
+    // nth time, so that we'll throw an error on recursive dependencies
+    // (detected via max stack depth being exceeded).
+    gatherDepsFull(*it, direct, order, depth+1, deps_hash, deps,
+                   get_indented_deps, indented_deps);
     if(first)
     {
       if(order == POSTORDER)
@@ -2203,10 +1765,10 @@ Rosstack::usage()
           " is used (if it contains a stack.xml).\n\n";
 }
 
-TiXmlElement*
+rospack_tinyxml::TiXmlElement*
 get_manifest_root(Stackage* stackage)
 {
-  TiXmlElement* ele = stackage->manifest_.RootElement();
+  rospack_tinyxml::TiXmlElement* ele = stackage->manifest_.RootElement();
   if(!ele)
   {
     std::string errmsg = std::string("error parsing manifest of package ") + 
