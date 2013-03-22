@@ -1,3 +1,3 @@
 [git-buildpackage]
-upstream-branch=release/rospack/2.1.16
+upstream-branch=@(release_tag)
 upstream-tree=branch

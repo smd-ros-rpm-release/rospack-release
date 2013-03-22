@@ -345,27 +345,27 @@ Rosstackage::crawl(std::vector<std::string> search_path,
         search_paths_.push_back(*it);
       return;
     }
-  }
 
-  if(crawled_)
-  {
-    bool same_paths = true;
-    if(search_paths_.size() == search_path.size())
-      same_paths = false;
-    else
+    if(crawled_)
     {
-      for(unsigned int i=0; i<search_paths_.size(); i++)
+      bool same_paths = true;
+      if(search_paths_.size() != search_path.size())
+        same_paths = false;
+      else
       {
-        if(search_paths_[i] != search_path[i])
+        for(unsigned int i=0; i<search_paths_.size(); i++)
         {
-          same_paths = false;
-          break;
+          if(search_paths_[i] != search_path[i])
+          {
+            same_paths = false;
+            break;
+          }
         }
       }
-    }
 
-    if(same_paths)
-      return;
+      if(same_paths)
+        return;
+    }
   }
 
 
@@ -856,6 +856,12 @@ Rosstackage::cpp_exports(const std::string& name, const std::string& type,
           PyErr_Print();
           PyGILState_Release(gstate);
           std::string errmsg = "could not call python function 'rosdep2.rospack.call_pkg_config'";
+          throw Exception(errmsg);
+        }
+        if(pValue == Py_None)
+        {
+          Py_DECREF(pValue);
+          std::string errmsg = "python function 'rosdep2.rospack.call_pkg_config' could not call 'pkg-config " + type + " " + (*it)->name_ + "' without errors";
           throw Exception(errmsg);
         }
 
@@ -1354,8 +1360,13 @@ Rosstackage::addStackage(const std::string& path)
 #endif
 
   Stackage* stackage = 0;
+  fs::path dry_manifest_path = fs::path(path) / manifest_name_;
   fs::path wet_manifest_path = fs::path(path) / ROSPACKAGE_MANIFEST_NAME;
-  if(fs::is_regular_file(wet_manifest_path))
+  if(fs::is_regular_file(dry_manifest_path))
+  {
+    stackage = new Stackage(name, path, dry_manifest_path.string(), manifest_name_);
+  }
+  else if(fs::is_regular_file(wet_manifest_path))
   {
     stackage = new Stackage(name, path, wet_manifest_path.string(), ROSPACKAGE_MANIFEST_NAME);
     loadManifest(stackage);
@@ -1363,8 +1374,7 @@ Rosstackage::addStackage(const std::string& path)
   }
   else
   {
-    fs::path manifest_path = fs::path(path) / manifest_name_;
-    stackage = new Stackage(name, path, manifest_path.string(), manifest_name_);
+    return;
   }
 
   // skip the stackage if it is not of correct type
