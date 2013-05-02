@@ -70,7 +70,7 @@ rospack_run(int argc, char** argv, rospack::Rosstackage& rp, std::string& output
     command = vm["command"].as<std::string>();
   if(!command.size())
   {
-    rp.logError( std::string("no command given.  Try '") + rp.getName() + " help'");
+    rp.logError( "no command given.  Try 'rospack help'");
     return true;
   }
   // For some commands, we force a crawl.  Definitely anything that does a
@@ -598,33 +598,21 @@ rospack_run(int argc, char** argv, rospack::Rosstackage& rp, std::string& output
       rp.logError( "invalid option(s) given");
       return false;
     }
-    std::vector<std::pair<std::string, bool> > flags;
-    if(!rp.cpp_exports(package, "--cflags-only-I", "cflags", deps_only, flags))
+    std::vector<std::string> flags;
+    if(!rp.exports(package, "cpp", "cflags", deps_only, flags))
       return false;
-
-    std::string dry_combined;
-    std::string wet_combined;
-    for(std::vector<std::pair<std::string, bool> >::const_iterator it = flags.begin();
+    std::string combined;
+    for(std::vector<std::string>::const_iterator it = flags.begin();
         it != flags.end();
         ++it)
     {
-      std::string& combined = it->second ? wet_combined : dry_combined;
-      if(!combined.empty())
+      if(it != flags.begin())
         combined.append(" ");
-      combined.append(it->first);
+      combined.append(*it);
     }
-
-    std::string dry_result;
-    parse_compiler_flags(dry_combined, "-I", true, false, dry_result);
-    output.append(dry_result);
-
-    std::string wet_result;
-    parse_compiler_flags(wet_combined, "-I", true, false, wet_result);
-    if(!dry_result.empty() && !wet_result.empty())
-      output.append(" ");
-    if(!rp.reorder_paths(wet_result, wet_result))
-      return false;
-    output.append(wet_result + "\n");
+    std::string result;
+    parse_compiler_flags(combined, "-I", true, false, result);
+    output.append(result + "\n");
     return true;
   }
   // COMMAND: cflags-only-other [--deps-only] [package]
@@ -640,17 +628,17 @@ rospack_run(int argc, char** argv, rospack::Rosstackage& rp, std::string& output
       rp.logError( "invalid option(s) given");
       return false;
     }
-    std::vector<std::pair<std::string, bool> > flags;
-    if(!rp.cpp_exports(package, "--cflags-only-other", "cflags", deps_only, flags))
+    std::vector<std::string> flags;
+    if(!rp.exports(package, "cpp", "cflags", deps_only, flags))
       return false;
     std::string combined;
-    for(std::vector<std::pair<std::string, bool> >::const_iterator it = flags.begin();
+    for(std::vector<std::string>::const_iterator it = flags.begin();
         it != flags.end();
         ++it)
     {
       if(it != flags.begin())
         combined.append(" ");
-      combined.append(it->first);
+      combined.append(*it);
     }
     std::string result;
     parse_compiler_flags(combined, "-I", false, false, result);
@@ -670,33 +658,21 @@ rospack_run(int argc, char** argv, rospack::Rosstackage& rp, std::string& output
       rp.logError( "invalid option(s) given");
       return false;
     }
-    std::vector<std::pair<std::string, bool> > flags;
-    if(!rp.cpp_exports(package, "--libs-only-L", "lflags", deps_only, flags))
+    std::vector<std::string> flags;
+    if(!rp.exports(package, "cpp", "lflags", deps_only, flags))
       return false;
-
-    std::string dry_combined;
-    std::string wet_combined;
-    for(std::vector<std::pair<std::string, bool> >::const_iterator it = flags.begin();
+    std::string combined;
+    for(std::vector<std::string>::const_iterator it = flags.begin();
         it != flags.end();
         ++it)
     {
-      std::string& combined = it->second ? wet_combined : dry_combined;
-      if(!combined.empty())
+      if(it != flags.begin())
         combined.append(" ");
-      combined.append(it->first);
+      combined.append(*it);
     }
-
-    std::string dry_result;
-    parse_compiler_flags(dry_combined, "-L", true, false, dry_result);
-    output.append(dry_result);
-
-    std::string wet_result;
-    parse_compiler_flags(wet_combined, "-L", true, false, wet_result);
-    if(!dry_result.empty() && !wet_result.empty())
-      output.append(" ");
-    if(!rp.reorder_paths(wet_result, wet_result))
-      return false;
-    output.append(wet_result + "\n");
+    std::string result;
+    parse_compiler_flags(combined, "-L", true, false, result);
+    output.append(result + "\n");
     return true;
   }
   // COMMAND: libs-only-l [--deps-only] [package]
@@ -712,17 +688,17 @@ rospack_run(int argc, char** argv, rospack::Rosstackage& rp, std::string& output
       rp.logError( "invalid option(s) given");
       return false;
     }
-    std::vector<std::pair<std::string, bool> > flags;
-    if(!rp.cpp_exports(package, "--libs-only-l", "lflags", deps_only, flags))
+    std::vector<std::string> flags;
+    if(!rp.exports(package, "cpp", "lflags", deps_only, flags))
       return false;
     std::string combined;
-    for(std::vector<std::pair<std::string, bool> >::const_iterator it = flags.begin();
+    for(std::vector<std::string>::const_iterator it = flags.begin();
         it != flags.end();
         ++it)
     {
       if(it != flags.begin())
         combined.append(" ");
-      combined.append(it->first);
+      combined.append(*it);
     }
     std::string result;
     parse_compiler_flags(combined, "-l", true, true, result);
@@ -742,17 +718,17 @@ rospack_run(int argc, char** argv, rospack::Rosstackage& rp, std::string& output
       rp.logError( "invalid option(s) given");
       return false;
     }
-    std::vector<std::pair<std::string, bool> > flags;
-    if(!rp.cpp_exports(package, "--libs-only-other", "lflags", deps_only, flags))
+    std::vector<std::string> flags;
+    if(!rp.exports(package, "cpp", "lflags", deps_only, flags))
       return false;
     std::string combined;
-    for(std::vector<std::pair<std::string, bool> >::const_iterator it = flags.begin();
+    for(std::vector<std::string>::const_iterator it = flags.begin();
         it != flags.end();
         ++it)
     {
       if(it != flags.begin())
         combined.append(" ");
-      combined.append(it->first);
+      combined.append(*it);
     }
     std::string intermediate;
     parse_compiler_flags(combined, "-L", false, false, intermediate);
