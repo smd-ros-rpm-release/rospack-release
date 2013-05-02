@@ -9,7 +9,7 @@ tracks:
     - git-bloom-generate -y rosdebian --prefix release/:{ros_distro} :{ros_distro}
       -i :{release_inc}
     devel_branch: fuerte-devel
-    last_version: 2.0.13
+    last_version: !!python/unicode '2.0.14'
     name: rospack
     patches: null
     release_inc: '0'
