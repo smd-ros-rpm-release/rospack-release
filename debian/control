@@ -1,0 +1,15 @@
+Source: ros-fuerte-rospack
+Section: misc
+Priority: extra
+Maintainer: Brian Gerkey <gerkey@willowgarage.com>
+Build-Depends: debhelper (>= 7.0.50~), libboost-all-dev, libgtest-dev, ros-fuerte-catkin
+Homepage: http://www.ros.org/wiki/rospack
+Standards-Version: 3.9.2
+
+Package: ros-fuerte-rospack
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, libboost-all-dev, libgtest-dev
+Description: ROS Package Tool
+ .
+ This stack contains the packages:
+ * /tmp/tmppXcS7b/clone: The ROS package manager.
