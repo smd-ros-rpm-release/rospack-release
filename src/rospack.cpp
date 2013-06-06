@@ -31,14 +31,25 @@
 
 #include <boost/filesystem.hpp>
 #include <boost/algorithm/string.hpp>
-#include <map>
 #include <stdexcept>
 
 #if defined(WIN32)
   #include <windows.h>
   #include <direct.h>
-  #include <libgen.h> // for dirname
   #include <fcntl.h>  // for O_RDWR, O_EXCL, O_CREAT
+  // simple workaround - could have issues though. See
+  //   http://stackoverflow.com/questions/2915672/snprintf-and-visual-studio-2010
+  // for potentially better solutions. Similar probably applies for some of the others
+  #define snprintf _snprintf
+  #define pclose _pclose
+  #define popen _popen
+  #define PATH_MAX MAX_PATH
+  #if defined(__MINGW32__)
+    #include <libgen.h> // for dirname
+  #endif
+  #if defined(_MSC_VER)
+    #include <io.h> // _mktemp_s
+  #endif
 #else //!defined(WIN32)
   #include <sys/types.h>
   #include <libgen.h>
@@ -520,12 +531,32 @@ Rosstackage::listDuplicates(std::vector<std::string>& dups)
 {
   dups.resize(dups_.size());
   int i = 0;
-  for(std::tr1::unordered_set<std::string>::const_iterator it = dups_.begin();
+  for(std::tr1::unordered_map<std::string, std::vector<std::string> >::const_iterator it = dups_.begin();
       it != dups_.end();
       ++it)
   {
-    dups[i] = (*it);
+    dups[i] = it->first;
     i++;
+  }
+}
+
+void
+Rosstackage::listDuplicatesWithPaths(std::map<std::string, std::vector<std::string> >& dups)
+{
+  dups.clear();
+  for(std::tr1::unordered_map<std::string, std::vector<std::string> >::const_iterator it = dups_.begin();
+      it != dups_.end();
+      ++it)
+  {
+    dups[it->first].resize(it->second.size());
+    int j = 0;
+    for(std::vector<std::string>::const_iterator jt = it->second.begin();
+        jt != it->second.end();
+        ++jt)
+    {
+      dups[it->first][j] = *jt;
+      j++;
+    }
   }
 }
 
@@ -1059,7 +1090,7 @@ Rosstackage::plugins(const std::string& name, const std::string& attrib,
 {
   // Find everybody who depends directly on the package in question
   std::vector<Stackage*> stackages;
-  if(!depsOnDetail(name, true, stackages))
+  if(!depsOnDetail(name, true, stackages, true))
     return false;
   // Also look in the package itself
   std::tr1::unordered_map<std::string, Stackage*>::const_iterator it = stackages_.find(name);
@@ -1254,7 +1285,7 @@ Rosstackage::depsWhyDetail(Stackage* from,
 
 bool
 Rosstackage::depsOnDetail(const std::string& name, bool direct,
-                          std::vector<Stackage*>& deps)
+                          std::vector<Stackage*>& deps, bool ignore_missing)
 {
   // No recrawl here, because depends-on always forces a crawl at the
   // start.
@@ -1266,7 +1297,7 @@ Rosstackage::depsOnDetail(const std::string& name, bool direct,
         it != stackages_.end();
         ++it)
     {
-      computeDeps(it->second, true);
+      computeDeps(it->second, true, ignore_missing);
       std::vector<Stackage*> deps_vec;
       gatherDeps(it->second, direct, POSTORDER, deps_vec);
       for(std::vector<Stackage*>::const_iterator iit = deps_vec.begin();
@@ -1386,7 +1417,13 @@ Rosstackage::addStackage(const std::string& path)
 
   if(stackages_.find(stackage->name_) != stackages_.end())
   {
-    dups_.insert(stackage->name_);
+    if (dups_.find(stackage->name_) == dups_.end())
+    {
+      std::vector<std::string> dups;
+      dups.push_back(stackages_[stackage->name_]->path_);
+      dups_[stackage->name_] = dups;
+    }
+    dups_[stackage->name_].push_back(stackage->path_);
     return;
   }
 
@@ -1514,7 +1551,7 @@ Rosstackage::loadManifest(Stackage* stackage)
 }
 
 void
-Rosstackage::computeDeps(Stackage* stackage, bool ignore_errors)
+Rosstackage::computeDeps(Stackage* stackage, bool ignore_errors, bool ignore_missing)
 {
   if(stackage->deps_computed_)
     return;
@@ -1535,16 +1572,16 @@ Rosstackage::computeDeps(Stackage* stackage, bool ignore_errors)
   }
   if (!stackage->is_wet_package_)
   {
-    computeDepsInternal(stackage, ignore_errors, "depend");
+    computeDepsInternal(stackage, ignore_errors, "depend", ignore_missing);
   }
   else
   {
-    computeDepsInternal(stackage, ignore_errors, "run_depend");
+    computeDepsInternal(stackage, ignore_errors, "run_depend", ignore_missing);
   }
 }
 
 void
-Rosstackage::computeDepsInternal(Stackage* stackage, bool ignore_errors, const std::string& depend_tag)
+Rosstackage::computeDepsInternal(Stackage* stackage, bool ignore_errors, const std::string& depend_tag, bool ignore_missing)
 {
   TiXmlElement* root;
   root = get_manifest_root(stackage);
@@ -1580,7 +1617,7 @@ Rosstackage::computeDepsInternal(Stackage* stackage, bool ignore_errors, const s
     }
     else if(!stackages_.count(dep_pkgname))
     {
-      if (stackage->is_wet_package_ && isSysPackage(dep_pkgname))
+      if (stackage->is_wet_package_ && (ignore_missing || isSysPackage(dep_pkgname)))
       {
         continue;
       }
@@ -1599,7 +1636,7 @@ Rosstackage::computeDepsInternal(Stackage* stackage, bool ignore_errors, const s
     {
       Stackage* dep = stackages_[dep_pkgname];
       stackage->deps_.push_back(dep);
-      computeDeps(dep, ignore_errors);
+      computeDeps(dep, ignore_errors, ignore_missing);
     }
   }
 }
