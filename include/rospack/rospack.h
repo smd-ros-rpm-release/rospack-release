@@ -107,10 +107,12 @@ and Rosstack.
 
 #include <boost/tr1/unordered_set.hpp>
 #include <boost/tr1/unordered_map.hpp>
+#include <list>
+#include <map>
+#include <set>
 #include <string>
 #include <vector>
-#include <set>
-#include <list>
+#include "macros.h"
 
 //#ifdef ROSPACK_API_BACKCOMPAT_V1
 #if 1 // def ROSPACK_API_BACKCOMPAT_V1
@@ -136,7 +138,7 @@ class DirectoryCrawlRecord;
  * use the functionality provided here through one of the derived classes,
  * Rosstack or Rospack.
  */
-class Rosstackage
+class ROSPACK_DECL Rosstackage
 {
   private:
     std::string manifest_name_;
@@ -146,7 +148,7 @@ class Rosstackage
     std::string tag_;
     bool quiet_;
     std::vector<std::string> search_paths_;
-    std::tr1::unordered_set<std::string> dups_;
+    std::tr1::unordered_map<std::string, std::vector<std::string> > dups_;
     std::tr1::unordered_map<std::string, Stackage*> stackages_;
     Stackage* findWithRecrawl(const std::string& name);
     void log(const std::string& level, const std::string& msg, bool append_errno);
@@ -158,21 +160,25 @@ class Rosstackage
                      std::vector<DirectoryCrawlRecord*>& profile_data,
                      std::tr1::unordered_set<std::string>& profile_hash);
     bool depsOnDetail(const std::string& name, bool direct,
-                         std::vector<Stackage*>& deps);
+                      std::vector<Stackage*>& deps, bool ignore_missing=false);
     bool depsDetail(const std::string& name, bool direct,
                     std::vector<Stackage*>& deps);
     bool isStackage(const std::string& path);
     void loadManifest(Stackage* stackage);
-    void computeDeps(Stackage* stackage, bool ignore_errors=false);
+    void computeDeps(Stackage* stackage, bool ignore_errors=false, bool ignore_missing=false);
+    void computeDepsInternal(Stackage* stackage, bool ignore_errors, const std::string& depend_tag, bool ignore_missing=false);
+    bool isSysPackage(const std::string& pkgname);
     void gatherDeps(Stackage* stackage, bool direct,
                     traversal_order_t order,
-                    std::vector<Stackage*>& deps);
+                    std::vector<Stackage*>& deps,
+                    bool no_recursion_on_wet=false);
     void gatherDepsFull(Stackage* stackage, bool direct,
                         traversal_order_t order, int depth,
                         std::tr1::unordered_set<Stackage*>& deps_hash,
                         std::vector<Stackage*>& deps,
                         bool get_indented_deps,
-                        std::vector<std::string>& indented_deps);
+                        std::vector<std::string>& indented_deps,
+                        bool no_recursion_on_wet=false);
     std::string getCachePath();
     bool readCache();
     void writeCache();
@@ -183,6 +189,8 @@ class Rosstackage
     void depsWhyDetail(Stackage* from,
                        Stackage* to,
                        std::list<std::list<Stackage*> >& acc_list);
+
+    void initPython();
 
   protected:
     /**
@@ -285,6 +293,12 @@ class Rosstackage
      *             crawling are written here.
      */
     void listDuplicates(std::vector<std::string>& dups);
+    /**
+     * @brief Identify duplicate stackages and provide their paths.  Forces crawl.
+     * @param dups Names of stackages that are found more than once while
+     *             crawling are mapped to the found paths of these packages.
+     */
+    void listDuplicatesWithPaths(std::map<std::string, std::vector<std::string> >& dups);
     /**
      * @brief Compute dependencies of a stackage (i.e., stackages that this
      *        stackages depends on).
@@ -391,6 +405,7 @@ Dependency chains from roscpp to roslib:
      */
     bool rosdeps(const std::string& name, bool direct,
                  std::set<std::string>& rosdeps);
+    void _rosdeps(Stackage* stackage, std::set<std::string>& rosdeps, const char* tag_name);
     /**
      * @brief Compute vcs entries that are declared in manifest of a package
      * and its dependencies.  Was used by Hudson build scripts; might not
@@ -406,6 +421,28 @@ Dependency chains from roscpp to roslib:
     bool vcs(const std::string& name, bool direct,
              std::vector<std::string>& vcs);
     /**
+     * @brief Compute cpp exports declared in a package and its dependencies.
+     * Used by rosbuild.
+     * @param name The package to work on.
+     * @param type The option to pass to pkg-config for wet packages.
+     * @param attrib The value of the 'attrib' attribute to search for.
+     * @param deps_only If true, then only return information from the
+     * pacakge's dependencies; if false, then also include the package's
+     * own export information.
+     * @param flags The pairs of export flags and is-wet are written here.
+     * @return True if the flags were computed, false otherwise.
+     */
+    bool cpp_exports(const std::string& name, const std::string& type,
+                 const std::string& attrib, bool deps_only,
+                 std::vector<std::pair<std::string, bool> >& flags);
+    /**
+     * @brief Reorder the paths according to the workspace chaining.
+     * @param paths The paths.
+     * @param reordered The reordered paths are written here.
+     * @return True if the pathswere reordered, false otherwise.
+     */
+    bool reorder_paths(const std::string& paths, std::string& reordered);
+    /**
      * @brief Compute exports declared in a package and its dependencies.
      * Used by rosbuild.
      * @param name The package to work on.
@@ -420,6 +457,17 @@ Dependency chains from roscpp to roslib:
     bool exports(const std::string& name, const std::string& lang,
                  const std::string& attrib, bool deps_only,
                  std::vector<std::string>& flags);
+    /**
+     * @brief Compute exports declared in a dry package.
+     * @param name The package to work on.
+     * @param lang The value of the 'lang' attribute to search for.
+     * @param attrib The value of the 'attrib' attribute to search for.
+     * @param flags The accumulated flags are written here.
+     * @return True if the flags were computed, false otherwise.
+     */
+    bool exports_dry_package(Stackage* stackage, const std::string& lang,
+                         const std::string& attrib,
+                         std::vector<std::string>& flags);
     /**
      * @brief Compute exported plugins declared in packages that depend
      * on a package.  Forces crawl. Used by rosbuild and roslib.
@@ -485,7 +533,7 @@ re-run the profile with --zombie-only
  * @brief Package crawler.  Create one of these to operate on a package
  * tree.  Call public methods inherited from Rosstackage.
  */
-class Rospack : public Rosstackage
+class ROSPACK_DECL Rospack : public Rosstackage
 {
   public:
     /**
@@ -503,7 +551,7 @@ class Rospack : public Rosstackage
  * @brief Stack crawler.  Create one of these to operate on a stack
  * tree.  Call public methods inherited from Rosstackage.
  */
-class Rosstack : public Rosstackage
+class ROSPACK_DECL Rosstack : public Rosstackage
 {
   public:
     /**
