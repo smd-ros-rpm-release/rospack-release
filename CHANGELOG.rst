@@ -2,13 +2,9 @@
 Changelog for package rospack
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-2.2.1 (2014-02-24)
-------------------
+2.1.23 (2014-02-25)
+-------------------
 * only perform backquote substitution when needed (`#34 <https://github.com/ros/rospack/issues/34>`_)
-
-2.2.0 (2014-01-30)
-------------------
-* add hash of ROS_PACKAGE_PATH to rospack/rosstack cache filename, remove ROS_ROOT from cache (`#28 <https://github.com/ros/rospack/issues/28>`_)
 
 2.1.22 (2014-01-07)
 -------------------
