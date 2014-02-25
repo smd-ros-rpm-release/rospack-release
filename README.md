@@ -1,3 +1,22 @@
+## rospack (hydro) - 2.1.23-0
+
+User `dthomas@drudge` released the packages in the `rospack` repository into the `hydro` distro by running `/usr/bin/bloom-release -r hydro -t hydro rospack` on `Tue, 25 Feb 2014 23:25:38 -0000`
+
+The `rospack` package was released.
+
+Version of package(s) in repository `rospack`:
+- rosdistro version: `2.1.22-0`
+- old version: `2.1.22-0`
+- new version: `2.1.23-0`
+
+Versions of tools used:
+- bloom version: `0.5.1`
+- catkin_pkg version: `0.1.26`
+- rosdep version: `0.10.25`
+- rosdistro version: `0.3.4`
+- vcstools version: `0.1.33`
+
+
 ## rospack (groovy) - 2.1.23-0
 
 User `dthomas@drudge` released the packages in the `rospack` repository into the `groovy` distro by running `/usr/bin/bloom-release -r groovy -t groovy rospack` on `Tue, 25 Feb 2014 23:19:55 -0000`
