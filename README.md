@@ -1,3 +1,22 @@
+## rospack (indigo) - 2.2.3-0
+
+The packages in the `rospack` repository were released into the `indigo` distro by running `/usr/bin/bloom-release -r indigo -t indigo rospack` on `Wed, 07 May 2014 21:11:54 -0000`
+
+The `rospack` package was released.
+
+Version of package(s) in repository `rospack`:
+- rosdistro version: `2.2.2-0`
+- old version: `2.2.2-0`
+- new version: `2.2.3-0`
+
+Versions of tools used:
+- bloom version: `0.5.5`
+- catkin_pkg version: `0.2.2`
+- rosdep version: `0.10.27`
+- rosdistro version: `0.3.5`
+- vcstools version: `0.1.33`
+
+
 ## rospack (indigo) - 2.2.2-0
 
 User `dthomas@drudge` released the packages in the `rospack` repository into the `indigo` distro by running `/usr/bin/bloom-release -r indigo -t indigo rospack` on `Tue, 25 Feb 2014 23:31:31 -0000`
