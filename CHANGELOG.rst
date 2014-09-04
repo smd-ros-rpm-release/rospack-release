@@ -2,31 +2,13 @@
 Changelog for package rospack
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-2.2.5 (2014-09-04)
-------------------
+2.1.24 (2014-09-04)
+-------------------
 * support tags defined in package format 2 (`#43 <https://github.com/ros/rospack/issues/43>`_)
 
-2.2.4 (2014-07-10)
-------------------
-* fix find_package(PythonLibs ...) with CMake 3 (`#42 <https://github.com/ros/rospack/issues/42>`_)
-
-2.2.3 (2014-05-07)
-------------------
-* find library for exact Python version (even if not in CMake provided list of version numbers) (`#40 <https://github.com/ros/rospack/issues/40>`_)
-* find TinyXML using cmake_modules (`#24 <https://github.com/ros/rospack/issues/24>`_)
-* make error messages tool specific (rospack vs. rosstack) (`#38 <https://github.com/ros/rospack/issues/38>`_)
-
-2.2.2 (2014-02-25)
-------------------
-* python 3 compatibility (`#35 <https://github.com/ros/rospack/issues/35>`_)
-
-2.2.1 (2014-02-24)
-------------------
+2.1.23 (2014-02-25)
+-------------------
 * only perform backquote substitution when needed (`#34 <https://github.com/ros/rospack/issues/34>`_)
-
-2.2.0 (2014-01-30)
-------------------
-* add hash of ROS_PACKAGE_PATH to rospack/rosstack cache filename, remove ROS_ROOT from cache (`#28 <https://github.com/ros/rospack/issues/28>`_)
 
 2.1.22 (2014-01-07)
 -------------------
